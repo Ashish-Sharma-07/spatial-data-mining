@@ -19,5 +19,5 @@ from django.contrib import admin
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^maharashtra/',include('ElementarySchool.urls')),
-    url(r'^maharashtra-demo/',include('state_level.urls')),
+    url(r'^query-plot-maps/',include('state_level.urls')),
 ]

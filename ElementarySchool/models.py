@@ -13,6 +13,9 @@ class district_boundaries(models.Model):
     def __str__(self):
         return self.district_n
 
+    class Meta:
+        db_table="district_boundaries"
+
 class taluka_boundaries(models.Model):
     district_n = models.CharField(max_length=100)
     district_c = models.CharField(max_length=3)
@@ -23,12 +26,18 @@ class taluka_boundaries(models.Model):
     def __str__(self):
         return self.taluka_nam
 
+    class Meta:
+        db_table="taluka_boundaries"
+
 class state_maharashtra(models.Model):
     st_nm = models.CharField(max_length=75)
     st_cen_cd = models.CharField(max_length=2)
     dt_cen_cd = models.CharField(max_length=2)
     district = models.CharField(max_length=50)
     geom = models.MultiPolygonField(srid=4326)
+
+    class Meta:
+        db_table="state_maharashtra"
 
     def __str__(self):
         return self.st_nm
@@ -53,6 +62,9 @@ class maharashtra_districts(models.Model):
 
     def __str__(self):
         return self.taluka
+
+    class Meta:
+        db_table="maharashtra_districts"
 
 class SchoolInfo(models.Model):
     txtbkyear = models.CharField(max_length=200, blank=True, null=True)

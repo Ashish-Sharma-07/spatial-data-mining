@@ -82,9 +82,9 @@ WSGI_APPLICATION = 'chloropleth.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'geonode_data',
+        'NAME': 'maharashtra_maps',
         'USER': 'postgres',
-        'PASSWORD':'geonode',
+        'PASSWORD':'postgres',
         'HOST':'localhost',
         'PORT':'5432',
     }

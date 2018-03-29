@@ -7,7 +7,7 @@ class AttributeForm(forms.Form):
         ('taluka','Taluka'),
     )
 
-    district = tuple([(i['id_2'],i['district'][0].upper()+i['district'][1:].lower()) for i in maharashtra_districts.objects.values('district','id_2').distinct().order_by('id_2')])
+    district = tuple([(i['district'],i['district'][0].upper()+i['district'][1:].lower()) for i in maharashtra_districts.objects.values('district','id_2').distinct().order_by('id_2')])
     feature = (
         ('teacher','Teacher'),
         ('water','Water'),

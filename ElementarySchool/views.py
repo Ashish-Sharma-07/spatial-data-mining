@@ -2,15 +2,14 @@
 from __future__ import unicode_literals
 
 from django.shortcuts import render_to_response, Http404, HttpResponseRedirect, render,HttpResponse
-from .models import state_maharashtra, maharashtra_districts,SchoolInfo
+from .models import state_maharashtra, maharashtra_districts, SchoolInfo
 from django.core.serializers import serialize
 from colour import Color
 from django.db.models import Sum, FloatField, Q, F
 from django.db.models.functions import Cast
 from .forms import AttributeForm
-from querybuilder.query import Query
 from django.apps.registry import apps
-SummaryInfo = apps.get_model('state_level','SummaryInfo')
+SummaryInfo = apps.get_model('state_level','BlockSummary')
 from django.urls import reverse
 import json
 from math import floor
@@ -78,7 +77,7 @@ def get_district_boundries():
     return (dist_json,len(district))
 
 # for schools,teachers,students,schools,school_categories,school_management
-def get_map_count_features_district(request,feature):
+def get_dist_count_map(request,state,feature):
 
     dist_json,length = get_district_boundries()
     max_v = 0
