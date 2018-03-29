@@ -14,8 +14,11 @@ Including another URLconf
     2. Add a URL to urlpatterns:  url(r'^blog/', include('blog.urls'))
 """
 from django.conf.urls import url,include
-from .views import get_info
-
+from .views import query_feature,get_districts,get_talukas,base_map
+app_name ='choropleth'
 urlpatterns = [
-    url(r'^$',get_info,name='demo'),
+    url(r'^$',base_map,name="plt_map"),
+    url(r'^get-district/$',get_districts,name="district_name"),
+    url(r'^get-taluka/$',get_talukas,name="taluka_name"),
+    url(r'^get-query-answer/$',query_feature,name="query_feature"),
 ]
