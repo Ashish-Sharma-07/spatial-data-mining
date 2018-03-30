@@ -2,10 +2,7 @@
 from __future__ import unicode_literals
 
 from django.shortcuts import render,HttpResponse,Http404
-from django.http.response import JsonResponse
 from django.core.serializers import serialize
-from colour import Color
-from django.db.models import Count,Sum
 from models import BlockSummary,DistrictSummary,VillageSummary
 import json
 from django.views.decorators.csrf import csrf_exempt
