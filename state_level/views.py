@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 
 from django.shortcuts import render,HttpResponse,Http404
+from django.http.response import JsonResponse
 from django.core.serializers import serialize
 from models import BlockSummary,DistrictSummary,VillageSummary
 import json
@@ -92,6 +93,73 @@ all_features.update(school_cat)
 all_features.update(teacher)
 all_features.update(student)
 
+###################################Mapping##########################
+
+water_map = {
+    'water_1': 'hand pump',
+    'water_2': 'well',
+    'water_3': 'tap water',
+    'water_4': 'other',
+    'water_5': 'none',
+}
+sanitation_map = {
+    'toiletwater_g': "Water In Girls Toilet",
+    'toiletwater_b': "Water In Boys Toilet",
+    'toiletb_func': "Functional Boys Toilet",
+    'toiletg_func': "Functional Girls Toilet",
+    'urinals_b': "Boys Urinals",
+    'urinals_g': "Girls Urinals",
+    'handwash_count': "Handwash",
+}
+
+security_map = {
+    'bndrywall_1': "Pucca",
+    'bndrywall_2': "Pucca But Broken",
+    'bndrywall_3': "Barbed wire fencing",
+    'bndrywall_4': "Hedges",
+    'bndrywall_5': "No Boundary wall",
+    'bndrywall_6': "Others",
+    'bndrywall_7': "Partial",
+    'bndrywall_8': "Under Construction",
+}
+
+school_cat_map = {
+    'schcat_1': 'Pri. Only',
+    'schcat_2': 'Pri. and Upper Pri.',
+    'schcat_3': "Pri., Upper Pri., Sec. and Higher Sec.",
+    'schcat_4': 'Upper Pri.',
+    'schcat_5': 'Upper Pri., Sec. and Higher Sec.',
+    'schcat_6': "Pri., Upper Pri., Sec.",
+    'schcat_7': "Upper Pri.,Sec.",
+    'schcat_8': 'Sec.',
+    'schcat_10': 'Sec. and Higher Sec.',
+    'schcat_11': 'Higher Sec.'
+}
+
+school_management_map = {
+    'schmgt_1': 'Edu. Dept.',
+    'schmgt_2': 'Tribal/social Welfare Dept.',
+    'schmgt_3': 'Local Body',
+    'schmgt_4': 'Pvt. Aided',
+    'schmgt_5': 'Pvt. Unaided',
+    'schmgt_6': 'Others',
+    'schmgt_7': 'Central Gov',
+    'schmgt_8': 'Unrecogised',
+    'schmgt_97': 'Recog. Madarsa',
+    'schmgt_98': 'Unrecog. Madarsa'}
+teacher_map = {'teacher': "No. Of Teachers"}
+
+student_map = {'student': "No. Of Students"}
+
+all_features_map ={}
+all_features_map.update(water_map)
+all_features_map.update(sanitation_map)
+all_features_map.update(security_map)
+all_features_map.update(school_management_map)
+all_features_map.update(school_cat_map)
+all_features_map.update(teacher_map)
+all_features_map.update(student_map)
+
 @csrf_exempt
 def query_feature(request):
     '''Dynamic Feature Based Query Execution'''
@@ -105,11 +173,13 @@ def query_feature(request):
         fld += ['distname'];fld +=['block_name']
     else:
         fld += ['distname'];
-        fld += ['block_name'];fld +=['village']
+        fld += ['block_name'];fld +=['village_name']
+
 
     loc = sample_input['location_fields']
     ftr = sample_input['feature_queries']
     loc_query_dict = {location_fields[k]:v for k,v in loc.iteritems()}
+
     query = klass[sample_input['class']].objects.all()
     for k, v in loc_query_dict.iteritems():
         query = query.filter(**{k:v})
@@ -131,16 +201,41 @@ def query_feature(request):
 
     if not result:
         raise Http404("No Result to display!!")
+
     fld = tuple(fld)
     #print(fld)
+
     result = serialize('geojson',result,geometry_field='geom',fields=fld)
+
+    #print result
 
     dist_json = json.loads(result)
     # remove crs field
     dist_json.pop('crs', None)
 
-    result = json.dumps(dist_json)
+    ##make changes in field names
+    for feature_dict in dist_json['features']:
 
+        #pop properties
+        properties = feature_dict.pop('properties',None)
+        ##Add location fields back
+        feature_dict['properties']={}
+        if properties.has_key('distname'):
+            feature_dict['properties']['distname'] = properties['distname']
+            properties.pop('distname',None)
+        if properties.has_key('block_name'):
+            feature_dict['properties']['taluka'] = properties['block_name']
+            properties.pop('block_name',None)
+        if properties.has_key('village_name'):
+            feature_dict['properties']['village'] = properties['village_name']
+            properties.pop('village_name', None)
+
+        ##Iterate over remaining fields
+        for k,v in properties.iteritems():
+            feature_dict['properties'][all_features_map[k]] = v
+
+
+    result = json.dumps(dist_json)
     return HttpResponse(result)
 
 @csrf_exempt
@@ -182,67 +277,10 @@ def get_talukas(request):
         raise Http404("Access Denied!");
 
 def base_map(request):
-    water = {
-        'water_1':'hand pump',
-        'water_2':'well',
-        'water_3':'tap water',
-        'water_4':'other',
-        'water_5':'none',
-    }
-    sanitation = {
-        'toiletwater_g':"Water In Girls Toilet",
-        'toiletwater_b':"Water In Boys Toilet",
-        'toiletb_func': "Functional Boys Toilet",
-        'toiletg_func': "Functional Girls Toilet",
-        'urinals_b':"Boys Urinals",
-        'urinals_g': "Girls Urinals",
-        'handwash_count': "Handwash",
-        }
-
-    security = {
-        'bndrywall_1':"Pucca",
-        'bndrywall_2':"Pucca But Broken",
-        'bndrywall_3':"Barbed wire fencing",
-        'bndrywall_4':"Hedges",
-        'bndrywall_5':"No Boundary wall",
-        'bndrywall_6':"Others",
-        'bndrywall_7':"Partial",
-        'bndrywall_8':"Under Construction",
-    }
-
-    school_cat = {
-        'schcat_1':'Pri. Only',
-        'schcat_2':'Pri. and Upper Pri.',
-        'schcat_3':"Pri., Upper Pri., Sec. and Higher Sec.",
-        'schcat_4':'Upper Pri.',
-        'schcat_5':'Upper Pri., Sec. and Higher Sec.',
-        'schcat_6':"Pri., Upper Pri., Sec.",
-        'schcat_7':"Upper Pri.,Sec.",
-        'schcat_8':'Sec.',
-        'schcat_10':'Sec. and Higher Sec.',
-        'schcat_11':'Higher Sec.'
-    }
-
-    school_management = {
-        'schmgt_1':'Edu. Dept.',
-        'schmgt_2':'Tribal/social Welfare Dept.',
-        'schmgt_3':'Local Body',
-        'schmgt_4':'Pvt. Aided',
-        'schmgt_5':'Pvt. Unaided',
-        'schmgt_6':'Others',
-        'schmgt_7':'Central Gov',
-        'schmgt_8':'Unrecogised',
-        'schmgt_97':'Recog. Madarsa',
-        'schmgt_98':'Unrecog. Madarsa'}
-
-    teacher = {'teacher':"No. Of Teachers"}
-
-    student = {'student':"No. Of Students"}
-
-    return render(request,"query.html",context={'wtrAttributes':water,
-                                                'sanAttributes':sanitation,
-                                                'secAttributes':security,
-                                                'schcatAttributes':school_cat,
-                                                'schmgtAttributes':school_management,
-                                                'tchrAttributes':teacher,
-                                                'stdAttributes':student},status=200)
+    return render(request,"query.html",context={'wtrAttributes':water_map,
+                                                'sanAttributes':sanitation_map,
+                                                'secAttributes':security_map,
+                                                'schcatAttributes':school_cat_map,
+                                                'schmgtAttributes':school_management_map,
+                                                'tchrAttributes':teacher_map,
+                                                'stdAttributes':student_map},status=200)

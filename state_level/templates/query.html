@@ -49,13 +49,32 @@
         </div>
     </div>
 
+    <!--Alert Modal -->
+    <div class="modal fade" id="AlertModal" role="dialog">
+                <div class="modal-dialog">
+                    <!-- Modal content-->
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <button type="button" class="close" data-dismiss="modal">&times;</button>
+                            <h4 class="modal-title">Alert</h4>
+                        </div>
+                        <div class="modal-body">
+                            <p>No Result Found!!</p>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
 </div>
+
 
 <form id="f1" action="#" method="post">
     <div class="container">
-
-        <div class="form-inline">
-            &nbsp;&nbsp;&nbsp;&nbsp;
+        <div class="form-inline">&nbsp;&nbsp;&nbsp;&nbsp;
             <div class="form-group">
                 <label for="is_dist">Select District? </label>
                 <div class="checkbox">
@@ -67,8 +86,7 @@
                 <label for="sel_dist">District: </label>
                 <select id="sel_dist" name="sel_dist" class="form-control" disabled="True">
                 </select>
-            </div>
-            &nbsp;&nbsp;&nbsp;&nbsp;
+            </div>&nbsp;&nbsp;&nbsp;&nbsp;
             <div class="form-group">
                 <label for="is_tlk">Select Taluka? </label>
                 <div class="checkbox">
@@ -78,12 +96,10 @@
             </div>
             <div class="form-group">
                 <label for="sel_tlk">Taluka:</label><select id="sel_tlk" name="sel_tlk" class="form-control" disabled="True"></select>
-            </div>
-            &nbsp;&nbsp;&nbsp;&nbsp;
+            </div>&nbsp;&nbsp;&nbsp;&nbsp;
         </div>
         <br>
-        <div class="form-inline">
-            &nbsp;&nbsp;&nbsp;&nbsp;
+        <div class="form-inline">&nbsp;&nbsp;&nbsp;&nbsp;
             <div class="form-group">
                 <label for="get_ftr">Facility:</label>
                 <select id="get_ftr" name="get_ftr_0" class="form-control">
@@ -144,11 +160,15 @@
         </div>
     </div>
 </form>
+
 <!--Map will be displayed here-->
 <br>
 <div class="container">
     <div class="row">
-        <div id="map" class="col-md-8" style="height:400px">
+        <div id="map" class="col-md-6" style="height:400px">
+
+        </div>
+        <div id="dt_tbl" class="col-md-6" style="overflow-y:auto;height:400px;">
 
         </div>
     </div>
@@ -269,13 +289,15 @@ function(){
     $("#sel_tlk").prop("disabled",true);
     klass ="district_level";
     count = 1;
+    ele = $("#dt_tbl");
+    ele.empty();
 }
 )
 
 $('#go').on(
 'click',function(e){
     e.preventDefault();
-    $(this).prop("disable");
+    $(this).prop("disabled",true);
     frm = $("#f1").serializeArray();
     //creating location_fields
     var location_fields={};
@@ -320,7 +342,9 @@ $('#go').on(
             display_info( jQuery.parseJSON(data));
             $("#go").prop("disabled",false);
         },
-        error : function(e){alert(e.status);$("#go").prop("disabled",false);},
+        error : function(e){
+        $(AlertModal).modal();
+        $("#go").prop("disabled",false);},
 
     })
 //End Ajax
@@ -415,6 +439,16 @@ $("#is_tlk").change(
     }
 	});
 
+$("#sel_dist").change(
+
+function(){
+$("#is_tlk").prop("checked",false);
+$("#sel_tlk").empty();
+$("#sel_tlk").prop("disabled",true);
+}
+
+)
+
 
 
 </script>
@@ -446,8 +480,9 @@ info = L.control();
         {
             map.removeLayer(geojson);
         }
-        console.log(info.remove());
-        console.log($(".info").remove());
+        //console.log(info.remove());
+        //console.log();
+        $(".info").remove()
     }
 
 //Interaction
@@ -499,13 +534,13 @@ geojson = L.geoJson(data, {
     //method that we will use to update the control based on feature properties passed
     info.update = function (props) {
         this._div.innerHTML = '<h4 align="center">Location</h4>' +  (props ?
-        '<b class="text-center">' + props.distname.toUpperCase() +'</b><br/>'
-        : '<span class="text-center">Hover over a state</span>');
+        '<b class="disp_name" align="center">' + props.distname.toUpperCase() +'</b><br/>'
+        : '<span class="disp_name">Hover over a state</span>');
     };
 
     info.addTo(map);
     $(".info").prop("style","background-color: white;opacity: 08;border-radius: 8px;width: 200px;");
-
+    $(".disp_name").prop("style","align:center");
 }
 </script>
 <script>
@@ -513,9 +548,36 @@ geojson = L.geoJson(data, {
 function display_info(data)
 {
 
-    dt = data.features;
-    console.log(dt);
+    //get the div element
+    ele = $("#dt_tbl");
+    ele.empty();
+    //get the attribute names
+    attr =  Object.getOwnPropertyNames(data.features[0].properties);
+    console.log(attr);
 
+    //create a table tag
+
+    html = '<table class="table table-condensed"> <thead> <tr>';
+
+    //Add the headings
+
+    for (i=0;i<attr.length;i++)
+    {
+        html +='<th>'+attr[i].toUpperCase()+'</th>';
+    }
+    html += '</tr></thead><tbody>';
+    //Add rows
+    dt = data.features;
+    for( i = 0;i<dt.length;i++)
+    {
+        html += '<tr>';
+        for(j in dt[i].properties){
+        html +='<td>'+ dt[i].properties[j].toString().toUpperCase()+'</dt>';
+        }
+        html +='</tr>';
+    }
+    html += '</tbody></table>';
+    ele.append(html);
 }
 </script>
 </body>

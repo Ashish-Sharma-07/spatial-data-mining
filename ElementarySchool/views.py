@@ -1,422 +1,266 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-from django.shortcuts import render_to_response, Http404, HttpResponseRedirect, render,HttpResponse
+from django.shortcuts import Http404, render,HttpResponse
 from .models import state_maharashtra, maharashtra_districts, SchoolInfo
 from django.core.serializers import serialize
 from colour import Color
-from django.db.models import Sum, FloatField, Q, F
-from django.db.models.functions import Cast
-from .forms import AttributeForm
 from django.apps.registry import apps
-SummaryInfo = apps.get_model('state_level','BlockSummary')
-from django.urls import reverse
+blockSummary = apps.get_model('state_level','BlockSummary')
+districtSummary = apps.get_model('state_level','DistrictSummary')
 import json
+from django.views.decorators.csrf import csrf_exempt
 from math import floor
-from django.http import JsonResponse
-from django.template.loader import render_to_string
 
-def get_features(request):
-    form = AttributeForm()
-    # if this is a POST request we need to process the form data
+features = {
+    'water':[('water_1','hand pump'),('water_2','well'),('water_3','tap water'),('water_4','other'),('water_5','none'),],
+
+    'sanitation':[
+        ('toiletwater_g', "Water In Girls Toilet"),
+        ('toiletwater_b', "Water In Boys Toilet"),
+        ('toiletb_func', "Functional Boys Toilet"),
+        ('toiletg_func', "Functional Girls Toilet"),
+        ('urinals_b', "Boys Urinals"),
+        ('urinals_g', "Girls Urinals"),
+        ('handwash_count', "Handwash"),],
+
+    'teacher':[('teacher',"No. Of Teachers")],
+
+    'school':[('school',"No. Of School")],
+
+    'student':[('student',"No. Of Student")],
+
+    'security':[
+        ('bndrywall_1', "Pucca"),
+        ('bndrywall_2', "Pucca But Broken"),
+        ('bndrywall_3', "Barbed wire fencing"),
+        ('bndrywall_4', "Hedges"),
+        ('bndrywall_5', "No Boundary wall"),
+        ('bndrywall_6', "Others"),
+        ('bndrywall_7', "Partial"),
+        ('bndrywall_8', "Under Construction"),
+    ],
+
+    'school_management':[
+        ('schmgt_1', 'Edu. Dept.'),
+        ('schmgt_2', 'Tribal/social Welfare Dept.'),
+        ('schmgt_3', 'Local Body'),
+        ('schmgt_4', 'Pvt. Aided'),
+        ('schmgt_5', 'Pvt. Unaided'),
+        ('schmgt_6', 'Others'),
+        ('schmgt_7', 'Central Gov'),
+        ('schmgt_8', 'Unrecogised'),
+        ('schmgt_97', 'Recog. Madarsa'),
+        ('schmgt_98', 'Unrecog. Madarsa'),
+    ],
+
+    'school_category':[
+        ('schcat_1', 'Pri. Only'),
+        ('schcat_2', 'Pri. and Upper Pri.'),
+        ('schcat_3', "Pri., Upper Pri., Sec. and Higher Sec."),
+        ('schcat_4', 'Upper Pri.'),
+        ('schcat_5', 'Upper Pri., Sec. and Higher Sec.'),
+        ('schcat_6', "Pri., Upper Pri., Sec."),
+        ('schcat_7', "Upper Pri.,Sec."),
+        ('schcat_8', 'Sec.'),
+        ('schcat_10', 'Sec. and Higher Sec.'),
+        ('schcat_11', 'Higher Sec.'),
+    ],
+}
+
+def plot_choropleth_maps(request):
+    ft = json.dumps(features)
+    names = districtSummary.objects.only('distname', 'distcode')
+    names = serialize('json', names, fields=('distname', 'distcode'))
+
+    dis_json = json.loads(names)
+    _names = []
+    for dist in dis_json:
+        _names += [dist['fields']]
+
+    js_dist = json.dumps(_names)
+    return render(request,'chloropleth/choropleth-maps.html',context={'district':js_dist,"ft_data":json.dumps(features)})
+
+
+klass = {
+    'district':districtSummary,
+    'taluka':blockSummary,
+}
+
+location = {
+    'distname':'distname__iexact',
+}
+
+weights = {
+    'water' : {'water_1':0.2,'water_2':0.2,'water_3':0.2,
+                      'water_4':0.2,'water_5':0.2,},
+
+           'sanitation':{
+               'toiletwater_g':0.14,'toiletwater_b':0.14,'toiletb_func':0.14,
+               'toiletg_func':0.14,'urinals_b':0.14,'urinals_g':0.14,
+               'handwash_count':0.14,},
+
+           'security':{
+               'bndrywall_1':0.125,'bndrywall_2':0.125,'bndrywall_3':0.125,'bndrywall_4':0.125,
+               'bndrywall_5':0.125,'bndrywall_6':0.125,'bndrywall_7':0.125,'bndrywall_8':0.125,
+           },
+
+           'school_management':{
+               'schmgt_1':0.1,'schmgt_2':0.1,'schmgt_3':0.1,'schmgt_4':0.1,
+               'schmgt_5':0.1,'schmgt_6':0.1,'schmgt_7':0.1,'schmgt_8':0.1,
+               'schmgt_97':0.1,'schmgt_98':0.1,
+           },
+
+           'school_category':{
+               'schcat_1':0.1,'schcat_2':0.1,'schcat_3':0.1,'schcat_4':0.1,
+               'schcat_5':0.1,'schcat_6':0.1,'schcat_7':0.1,'schcat_8':0.1,
+               'schcat_10':0.1,'schcat_11':0.1,
+           },
+
+           'teacher':{'teacher':1},
+
+           'school': {'school':1},
+
+           'student':{'student':1},
+           }
+
+colors = {
+    'water':('#90c1f5','#2777ce'),
+    'sanitation':('#cc9f67','#b46e18'),
+    'security':('#d183e5','#9025ab'),
+    'school_management':('#f938c4','#ae0a81'),
+    'school_category':('#87f5aa','#3ba05b'),
+    'teacher':('#e4f067','#949f23'),
+    'school':('#9df5f0','#44aba5'),
+    'student':('#f9906b','#b65330'),
+}
+
+@csrf_exempt
+def get_map(request):
     if request.method == 'POST':
         if request.is_ajax():
-            print request.POST
-            feature = request.POST['feature']
-            district = request.POST['district']
-            if feature == 'water':
-                a = HttpResponseRedirect(reverse('district:wtr_tlk_ind',args=[district]))
-            elif feature == 'sanitation':
-                a = HttpResponseRedirect(reverse('district:san_tlk_ind',args=[district]))
-            elif feature == 'security':
-                a = HttpResponseRedirect(reverse('district:sec_tlk_ind',args=[district]))
+            ip = json.loads(request.POST['data'])
+            ##print ip
+            ##Get Class Name##
+            cls = klass[ip['kclass']]
+
+            ##Feature_list
+            ftr = features[ip['feature'][0]]
+
+            ##color_range
+            frm,to = Color(colors[ip['feature'][0]][0]),Color(colors[ip['feature'][0]][1])
+
+            ##five ranges
+            color_range = frm.range_to(to,6)
+
+            wt = None
+            ##get the weights
+            if not ip['weight']:
+                wt = weights[ip['feature'][0]]
             else:
-                a = HttpResponseRedirect(reverse('district:plt_tlk',args=[district,feature]))
-        return HttpResponse(a.url)
-    # if a GET (or any other method) we'll create a blank form
+                wt = ip['weight'].values()
+                wt = {i[0]:float(i[1]) for i in wt}
+
+
+            ##Filter Based On Location
+            loc = ip['location']
+
+            val_fields = []
+            #val_fields.extend(loc.keys())
+
+            if ip['kclass'] =='district':
+                val_fields +=['distname']
+            elif ip['kclass'] == 'taluka':
+                val_fields += ['distname']
+                val_fields += ['block_name']
+
+
+            ##Get Field Names
+            fl_val,fl_name = zip(*ftr)
+
+            val_fields += list(fl_val)
+
+            ##Creating QueryDict
+            query_dict = {location[k]:v for k,v in loc.iteritems()}
+
+            ##filter based on location
+            query = cls.objects.all()
+
+            for k,v in query_dict.iteritems():
+               query = query.filter(**{k:v})
+
+            result = query
+            result = serialize('geojson', result, geometry_field='geom', fields=tuple(val_fields))
+            dict_json = json.loads(result)
+
+            #remove crs field
+            dict_json.pop('crs', None)
+
+            ind_lst = []
+            dist_no_geom = []
+            ## iterate over the features
+            for feature_dict in dict_json['features']:
+
+                ## pop out the properties and store it in props
+                props = feature_dict.pop('properties',None)
+
+                #print feature_dict
+
+                ## remove location info and store in variables
+                distname = ''
+                talukaname = ''
+                if props.has_key('distname'):
+                    distname = props.pop('distname',None)
+
+                if props.has_key('block_name'):
+                    talukaname = props.pop('block_name',None)
+
+                ##remaining pairs are the fields
+                index = 0
+
+                for k in props:
+                    index += round(props[k]*wt[k],2)
+                ind_lst += [index]
+
+                temp = dict()
+                if not feature_dict['geometry']:
+                    if distname:
+                        temp = {"district":distname,"index":round(index,2)}
+
+                    if talukaname:
+                        temp = {"district":distname,"taluka":talukaname,"index":round(index,2)}
+
+                    #print temp
+                    dist_no_geom += [temp]
+
+                ## add the index
+                feature_dict['properties'] = {}
+                feature_dict['properties']['index'] = round(index,2)
+                ## add the locations
+                if distname:
+                    feature_dict['properties']['distname'] = distname
+                if talukaname:
+                    feature_dict['properties']['taluka'] = talukaname
+
+            min_v = max(0,floor(min(ind_lst))-1)
+            max_v = floor(max(ind_lst))+1
+            rg = round(max_v-min_v,2)
+            grade = [round(min_v+(rg*(float(i)/100))) for i in range(0,120,20)]
+            #print min_v,max_v
+            #print grade
+            color_range = [str(i) for i in color_range]
+            #print color_range
+            data = {
+                'geographic_data':dict_json,
+                'color':color_range,
+                'grade':grade,
+                'no_geom':dist_no_geom,
+            }
+
+            result = json.dumps(data)
+
+
+
+        return HttpResponse(result)
     else:
-        form = AttributeForm()
-
-    return render(request,'chloropleth/form.html',{'form':form})
-####################################State#######################################
-
-def get_highlighted_dist(request):
-	if request.method == 'POST':
-		print(request.is_ajax())
-		if request.is_ajax():
-			attribute = request.POST['Attribute']
-			operator = request.POST['Operator']
-			value = request.POST['Value']
-			equals_kwargs = {"{}__iexact".format(attribute): value}
-			greater_kwargs = {"{}__gt".format(attribute): value}
-			less_kwargs = {"{}__lt".format(attribute): value}
-			dist_json,length = get_district_boundries()
-		
-			for i in range(length):
-				d_name = dist_json['features'][i]['properties']['district']
-				if(operator=='='):
-					data = SummaryInfo.objects.values().filter(distname__iexact = d_name,**equals_kwargs)
-				elif(operator=='<'):
-					data = SummaryInfo.objects.values().filter(distname__iexact = d_name,**less_kwargs)
-				elif(operator=='>'):
-					data = SummaryInfo.objects.values().filter(distname__iexact = d_name,**greater_kwargs)	
-			district = json.dumps(data)
-	return render_to_response('chloropleth/maps_query.html',{'district':district})
-	
-	
-def get_district_boundries():
-    district = state_maharashtra.objects.all().order_by('district')
-    # serialize the data
-    district_serialize = serialize('geojson', district,geometry_field='geom',fields=('district',))
-    dist_json = json.loads(district_serialize)
-    # remove crs field
-    dist_json.pop('crs',None)
-    for i in range(len(district)):
-        d_name = dist_json['features'][i]['properties']['district']
-        dist_json['features'][i]['properties']['district'] = d_name[0].upper() + d_name[1:].lower()
-    return (dist_json,len(district))
-
-# for schools,teachers,students,schools,school_categories,school_management
-def get_dist_count_map(request,state,feature):
-
-    dist_json,length = get_district_boundries()
-    max_v = 0
-    min_v = 1000
-    for i in range(length):
-        d_name = dist_json['features'][i]['properties']['district']
-        features = SummaryInfo.objects.values(feature).filter(distname__iexact = d_name).\
-                aggregate(Sum(str(feature)))
-        if min_v > features[str(feature)+'__sum']:
-            min_v = features[str(feature)+'__sum']
-        if max_v < features[str(feature) + '__sum']:
-            max_v = features[str(feature) + '__sum']
-            rag = max_v - min_v
-        dist_json['features'][i]['properties']['feature_val'] = features[str(feature)+'__sum']
-
-    district = json.dumps(dist_json)
-
-    grade = [floor((float(i*rag)/100)+min_v) for i in range(0,110,20)]
-
-    color_list = list(str(i) for i in Color('yellow').range_to(Color('red'), len(grade)))
-
-    return render_to_response('chloropleth/maps.html',{'district':district,'Name':str(feature),'range':rag,
-                                                       'grade':grade,'color':color_list})
-
-def get_water_district(request):
-
-    try:
-        dark_blue = Color('darkblue')
-        light_blue = Color('lightblue')
-        color_list = list(str(i) for i in light_blue.range_to(dark_blue,5))
-
-        dist_json,length = get_district_boundries()
-        max_v = 0
-        min_v = 1000
-        weights = ['',0.2,0.2,0.2,0.2,0.2]
-
-        for i in range(length):
-
-            d_name = dist_json['features'][i]['properties']['district']
-            water_info = list(SummaryInfo.objects.values('distname').filter(distname__iexact=d_name). \
-                              annotate(water_index=
-                                       Cast(Sum('water_1'), FloatField()) * weights[1] +
-                                       Cast(Sum('water_2'), FloatField()) * weights[2] +
-                                       Cast(Sum('water_3'), FloatField()) * weights[3] +
-                                       Cast(Sum('water_4'), FloatField()) * weights[4] +
-                                       Cast(Sum('water_5'), FloatField()) * weights[5]))[0]
-            temp = water_info['water_index']
-            max_v = max(temp,max_v)
-            min_v = min(temp,min_v)
-
-            dist_json['features'][i]['properties']['feature_val'] = temp
-        district = json.dumps(dist_json)
-        range_value = max_v - min_v
-        feature = "Drinking Water"
-        grade = [round(min_v+(float(i * range_value) / 100), 2) for i in range(0, 110, 20)]
-
-        return render_to_response('chloropleth/maps.html',{'district':district,'Name':str(feature),'range':range_value,
-                                                       'grade':grade,'color':color_list})
-    except IndexError ,e:
-        raise Http404("Nope")
-
-def get_district_sanitation(request):
-
-    try:
-        sanitation_cols = ['toiletb_func', 'urinals_b', 'toiletg_func', 'urinals_g']
-        wt = ['',0.2,0.3,0.2,0.1,0.3]
-        # these 2 attributes are yet to be considered
-        extra = ['toiletwater_b', 'toiletwater_g']
-        max_v = 0
-        min_v = 1000
-        dist_json,length = get_district_boundries()
-
-        for i in range(length):
-
-            d_name = dist_json['features'][i]['properties']['district']
-            # vals_dict contains all 4 attributes and handwash_yn and their total for the particular district
-
-            temp = list(SummaryInfo.objects.values('distname').filter(distname__iexact=d_name).annotate(
-                sanitation_index =
-                Cast(Sum('toiletb_func'), FloatField()) * wt[1] +
-                Cast(Sum('urinals_b'), FloatField()) * wt[2] +
-                Cast(Sum('toiletg_func'), FloatField()) * wt[3] +
-                Cast(Sum('urinals_g'), FloatField()) * wt[4] +
-                Cast(Sum('handwash_count'), FloatField()) * wt[5]
-            ))[0]
-
-            max_v = max(max_v,temp['sanitation_index'])
-            min_v = min(min_v, temp['sanitation_index'])
-            dist_json['features'][i]['properties']['feature_val'] = temp['sanitation_index']
-
-        range_value = max_v - min_v
-        district = json.dumps(dist_json)
-        grade = [round((float(i * range_value) / 100)+min_v, 2) for i in range(0, 110, 20)]
-        dark_blue = Color('#F0DC82')
-        light_blue = Color('#8A3324')
-        color_list = list(str(i) for i in light_blue.range_to(dark_blue, 5))
-        feature = "Sanitation"
-        return render_to_response('chloropleth/maps.html',{'district':district,'Name':str(feature),'range':range_value,
-                                                       'grade':grade,'color':color_list})
-    except IndexError:
-        raise Http404('Nope')
-
-
-def get_district_security(request):
-
-    try:
-        # for reference
-        labels = ['Not Applicable', 'Pucca', 'Pucca but broken', 'barbed wire fencing', 'Hedges',
-                  'No boundary wall', 'others', 'Partial', 'Under Construction']
-        # weights corresponds to the labels above
-        wt = ['',0.1, 0.6, 0.4, 0.8, 0.7, 0, 0.3, 0.5, 0.2]
-        # dist_weight contain key as district and value as its overall weighted average of bndry walls
-
-        max_v = 0
-        min_v = 1000
-        dist_json, length = get_district_boundries()
-
-        for i in range(length):
-            d_name = dist_json['features'][i]['properties']['district']
-            temp = list(SummaryInfo.objects.values('distname').filter(distname__iexact=d_name).annotate(
-                security_index =
-                Cast(Sum('bndrywall_1'), FloatField()) * wt[1] +
-                Cast(Sum('bndrywall_2'), FloatField()) * wt[2] +
-                Cast(Sum('bndrywall_3'), FloatField()) * wt[3] +
-                Cast(Sum('bndrywall_4'), FloatField()) * wt[4] +
-                Cast(Sum('bndrywall_5'), FloatField()) * wt[5] +
-                Cast(Sum('bndrywall_6'), FloatField()) * wt[6] +
-                Cast(Sum('bndrywall_7'), FloatField()) * wt[7] +
-                Cast(Sum('bndrywall_8'), FloatField()) * wt[8]
-            ))[0]
-
-            max_v = max(max_v, temp['security_index'])
-            min_v = min(min_v, temp['security_index'])
-
-            dist_json['features'][i]['properties']['feature_val'] = temp['security_index']
-        range_value = max_v - min_v
-
-        district = json.dumps(dist_json)
-        grade = [round((float(i * range_value) / 100)+min_v, 2) for i in range(0, 110, 20)]
-        dark_blue = Color('#66023C')
-        light_blue = Color('#C71585')
-        color_list = list(str(i) for i in light_blue.range_to(dark_blue, 5))
-        feature = "Security"
-
-        return render_to_response('chloropleth/maps.html',
-                                  {'district': district, 'Name': str(feature), 'range': range_value,
-                                   'grade': grade, 'color': color_list})
-    except IndexError ,e:
-        print str(e)
-        raise Http404('Nope')
-
-####################################District####################################
-
-def get_taluka_boundries(district):
-
-    taluka = maharashtra_districts.objects.filter(district__iexact=district)
-    # serialize the data
-    taluka_serialize = serialize('geojson', taluka,geometry_field='geom',fields=('district','taluka'))
-    taluka_json = json.loads(taluka_serialize)
-    # remove crs field
-    taluka_json.pop('crs',None)
-    for i in range(len(taluka)):
-        d_name = taluka_json['features'][i]['properties']['district']
-        taluka_json['features'][i]['properties']['district'] = d_name[0].upper() + d_name[1:].lower()
-        t_name = taluka_json['features'][i]['properties']['taluka']
-        taluka_json['features'][i]['properties']['taluka'] = t_name[0].upper() + t_name[1:].lower()
-    return (taluka_json,len(taluka))
-
-def get_taluka_count_map(request,district,feature):
-
-    max_v = 0
-    min_v = 1000
-    taluka_json,length = get_taluka_boundries(district)
-
-    for i in range(length):
-        t_name = taluka_json['features'][i]['properties']['taluka']
-        features = list(SummaryInfo.objects.values(str(feature),'block_name').\
-                        filter(Q(block_name__iexact=t_name),Q(distname__iexact = district)))
-        if features:
-            temp = features[0][str(feature)]
-            max_v = max(temp, max_v)
-            min_v = min(temp, min_v)
-            taluka_json['features'][i]['properties']['feature_val'] = features[0][str(feature)]
-        else:
-        #    print t_name
-            taluka_json['features'][i]['properties']['feature_val'] = ""
-
-    taluka = json.dumps(taluka_json)
-    range_val = max_v-min_v
-    grade = [round((float(i * range_val) / 100)+min_v,0) for i in range(0, 110, 20)]
-
-    color_list = list(str(i) for i in Color('yellow').range_to(Color('red'), len(grade)))
-    return render_to_response('chloropleth/maps.html', {'district': taluka, 'Name': str(feature), 'range': range_val,
-                                                               'grade': grade, 'color': color_list})
-
-def get_taluka_water(request,district):
-    try:
-        dark_blue = Color('darkblue')
-        light_blue = Color('lightblue')
-        color_list = list(str(i) for i in light_blue.range_to(dark_blue, 5))
-        # fields=('district',))
-        # create a dictionary
-        taluka_json,length = get_taluka_boundries(district)
-        max_v = 0
-        min_v = 1000
-        weights = ['', 0.6, 0.2, 0, 1, 0]
-        for i in range(length):
-            t_name = taluka_json['features'][i]['properties']['taluka']
-            water_info = list(SummaryInfo.objects.values('block_name').filter(block_name__iexact=t_name). \
-                              annotate(water_index=
-                                       F('water_1') * weights[1] +
-                                       F('water_2') * weights[2] +
-                                       F('water_3') * weights[3] +
-                                       F('water_4') * weights[4] +
-                                       F('water_5') * weights[5]))
-            if water_info:
-                temp = water_info[0]['water_index']
-                max_v = max(temp, max_v)
-                min_v = min(temp, min_v)
-                taluka_json['features'][i]['properties']['feature_val'] = temp
-
-            else:
-        #        print t_name
-                taluka_json['features'][i]['properties']['feature_val'] = ""
-
-        range_value = max_v -min_v
-        feature = "Drinking Water"
-        grade = [round((float(i * range_value) / 100)+min_v, 2) for i in range(0, 110, 20)]
-        taluka = json.dumps(taluka_json)
-        range_value = max_v - min_v
-        return render_to_response('chloropleth/maps.html',
-                                  {'district': taluka, 'Name': str(feature), 'range': range_value,
-                                   'grade': grade, 'color': color_list})
-    except IndexError, e:
-        raise Http404("Nope")
-
-def get_taluka_sanitation(request,district):
-
-    try:
-        dark_color = Color('#F0DC82')
-        light_color= Color('#8A3324')
-        color_list = list(str(i) for i in dark_color.range_to(light_color, 5))
-        max_v = 0
-        min_v = 1000
-        sanitation_cols = ['toiletb_func', 'urinals_b', 'toiletg_func', 'urinals_g']
-        # these 2 attributes are yet to be considered
-        extra = ['toiletwater_b', 'toiletwater_g']
-        weights = [0.14]*7
-        # dist_weight contain key as district and value as its overall count of toilets
-        tal_weight = dict()
-
-        taluka_json,length = get_taluka_boundries(district)
-
-        for i in range(length):
-            t_name = taluka_json['features'][i]['properties']['taluka']
-            san_info = list(SummaryInfo.objects.values('block_name','toiletwater_b','urinals_b',
-            'toiletb_func','toiletwater_g','toiletg_func','urinals_b','handwash_count').
-                            filter(block_name__iexact=t_name))
-            if san_info:
-                temp_dict = san_info[0]
-                t1 = temp_dict['toiletwater_g']
-                t2 = temp_dict['toiletwater_b']
-                t3 = temp_dict['toiletb_func']
-                t4 = temp_dict['toiletg_func']
-                t5 = temp_dict['toiletwater_g']
-                t6 = temp_dict['toiletwater_g']
-                t7 = temp_dict['handwash_count']
-                temp = t1*weights[0]+t2*weights[1]+t3*weights[2]+t4*weights[3]+t5*weights[4]+t6*weights[5]+t7*weights[6]
-                temp = round(temp,2)
-                max_v = max(temp, max_v)
-                min_v = min(temp, min_v)
-                taluka_json['features'][i]['properties']['feature_val'] = temp
-            else:
-                #print t_name
-                taluka_json['features'][i]['properties']['feature_val'] = ""
-
-        range_value = max_v -min_v
-        taluka = json.dumps(taluka_json)
-        grade = [round(min_v+(float(i * range_value)) / 100, 2) for i in range(0, 110, 20)]
-        feature = "Sanitation"
-        return render_to_response('chloropleth/maps.html',
-                                  {'district': taluka, 'Name': str(feature), 'range': range_value,
-                                   'grade': grade, 'color': color_list})
-    except IndexError, e:
-        print str(e)
-        raise Http404('Nope')
-
-def get_taluka_security(request,district):
-
-    try:
-        # for reference
-        labels = ['Not Applicable', 'Pucca', 'Pucca but broken', 'barbed wire fencing', 'Hedges',
-                  'No boundary wall', 'others', 'Partial', 'Under Construction']
-        max_v = 0
-        min_v = 1000
-
-        # weights corresponds to the labels above
-        weights = ['', 0.1, 0.6, 0.4, 0.8, 0.7, 0, 0.3, 0.5, 0.2]
-
-        # dist_weight contain key as district and value as its overall weighted average of bndry walls
-        taluka_json,length = get_taluka_boundries(district)
-
-        for i in range(length):
-            t_name = taluka_json['features'][i]['properties']['taluka']
-            security_info = list(SummaryInfo.objects.values('block_name').filter(block_name__iexact=t_name). \
-                              annotate(security_index=
-                                       F('bndrywall_1') * weights[1] +
-                                       F('bndrywall_2') * weights[2] +
-                                       F('bndrywall_3') * weights[3] +
-                                       F('bndrywall_4') * weights[4] +
-                                       F('bndrywall_5') * weights[5] +
-                                       F('bndrywall_6') * weights[6] +
-                                       F('bndrywall_7') * weights[7] +
-                                       F('bndrywall_8') * weights[8])
-
-                              )
-            if security_info:
-                temp = security_info[0]['security_index']
-                max_v = max(temp, max_v)
-                min_v = min(temp, min_v)
-                taluka_json['features'][i]['properties']['feature_val'] = temp
-
-            else:
-#                print t_name
-                taluka_json['features'][i]['properties']['feature_val'] = ""
-
-        range_value = max_v-min_v
-#        print max_v,min_v
-#        print range_value
-        taluka = json.dumps(taluka_json)
-        grade = [round((float(i * range_value) / 100)+min_v, 2) for i in range(0, 110, 20)]
-
-        dark_color = Color('#66023C')
-        light_color = Color('#C71585')
-        color_list = list(str(i) for i in light_color.range_to(dark_color, 5))
-        feature = "Security"
-        return render_to_response('chloropleth/maps.html',
-                                  {'district': taluka, 'Name': str(feature), 'range': range_value,
-                                   'grade': grade, 'color': color_list})
-    except IndexError, e:
-        print str(e)
-        raise Http404('Nope')
+        raise Http404("Access Denied!")
